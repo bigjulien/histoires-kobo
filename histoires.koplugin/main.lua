@@ -10,6 +10,7 @@ generateur.lua, qui ne dépend pas de KOReader.
 local ButtonDialog = require("ui/widget/buttondialog")
 local ConfirmBox = require("ui/widget/confirmbox")
 local DataStorage = require("datastorage")
+local Event = require("ui/event")
 local Dispatcher = require("dispatcher")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
@@ -24,6 +25,9 @@ local logger = require("logger")
 -- Fichier déposé par l'entrée NickelMenu : s'il existe au démarrage de
 -- KOReader, on ouvre directement l'accueil des histoires.
 local FICHIER_OUVERTURE = "/tmp/histoires-kobo.ouvrir"
+-- Marges gauche et droite du lecteur pour les histoires ouvertes comme un
+-- livre (même échelle que le réglage « Marges G/D » de KOReader).
+local MARGES_LIVRE = { 20, 20 }
 local AGES = { 2, 3, 4, 5 }
 
 local Histoires = WidgetContainer:extend{
@@ -357,14 +361,20 @@ function Histoires:ouvrirCommeLivre(histoire)
     if not f then return self:erreur("Impossible d'écrire " .. chemin) end
     f:write(self.Generateur.versDocument(histoire))
     f:close()
+    -- Une fois le livre ouvert, on règle ses marges comme le ferait le menu
+    -- du lecteur ; KOReader les retient pour ce fichier.
+    local function reglerMarges(lecteur)
+        lecteur.document.configurable.h_page_margins = { MARGES_LIVRE[1], MARGES_LIVRE[2] }
+        lecteur:handleEvent(Event:new("SetPageHorizMargins", { MARGES_LIVRE[1], MARGES_LIVRE[2] }))
+    end
     if self.ui.document then
         -- Déjà dans le lecteur : on change de document proprement. Ouvrir un
         -- second lecteur par-dessus laisserait l'ancien recevoir les gestes
         -- alors que son document est fermé.
-        self.ui:switchDocument(chemin)
+        self.ui:switchDocument(chemin, nil, reglerMarges)
     else
         local ReaderUI = require("apps/reader/readerui")
-        ReaderUI:showReader(chemin)
+        ReaderUI:showReader(chemin, nil, nil, nil, reglerMarges)
     end
 end
 
