@@ -357,8 +357,15 @@ function Histoires:ouvrirCommeLivre(histoire)
     if not f then return self:erreur("Impossible d'écrire " .. chemin) end
     f:write(self.Generateur.versDocument(histoire))
     f:close()
-    local ReaderUI = require("apps/reader/readerui")
-    ReaderUI:showReader(chemin)
+    if self.ui.document then
+        -- Déjà dans le lecteur : on change de document proprement. Ouvrir un
+        -- second lecteur par-dessus laisserait l'ancien recevoir les gestes
+        -- alors que son document est fermé.
+        self.ui:switchDocument(chemin)
+    else
+        local ReaderUI = require("apps/reader/readerui")
+        ReaderUI:showReader(chemin)
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -438,8 +445,9 @@ function Histoires:ecranReglages()
             } },
             { action("Recharger la base d'histoires", function()
                 self:chargerBase()
-                local n = #self.base.trames + #self.base.histoires
-                local texte = n .. " trames et histoires chargées."
+                local texte = string.format("%d histoires écrites, %d trames complètes, %d intrigues.\n%d trames différentes possibles pour %d ans.",
+                    #self.base.histoires, #self.base.trames, #self.base.intrigues,
+                    self:generateur():nombreDeTrames(), self:lire("age", 4))
                 if #self.erreurs > 0 then
                     texte = texte .. "\n\nProblèmes trouvés :\n" .. table.concat(self.erreurs, "\n")
                 end

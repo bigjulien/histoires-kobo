@@ -8,10 +8,13 @@ Deux sources d'histoires :
 
 - **la bibliothèque** : des histoires entièrement écrites (l'étoile qui ne voulait
   pas dormir, la colère de Petit Ours, le dragon qui avait le hoquet...) ;
-- **le générateur** : des trames d'histoires (bonne nuit, cache-cache, objet perdu,
-  peur du noir, averse, cadeau, couleurs, cris des animaux, voyage) dans lesquelles
-  le héros, son compagnon, le lieu, l'objet et de nombreux détails sont tirés au
-  hasard. Le texte s'accorde au genre de chaque personnage.
+- **le générateur** : neuf trames complètes (bonne nuit, cache-cache, objet perdu,
+  peur du noir...) et une soixantaine d'intrigues (amitié, émotions, nature,
+  aventure, humour, histoires pour les tout-petits, histoires du soir). Chaque
+  intrigue est encadrée par un début et une fin tirés au hasard parmi douze de
+  chaque, ce qui donne plus de 2 000 trames différentes à partir de 3 ans (830 à
+  2 ans). Le héros, son compagnon, le lieu, l'objet et de nombreux détails sont
+  eux aussi tirés au hasard, et le texte s'accorde au genre de chaque personnage.
 
 Les histoires s'adaptent à l'enfant : son prénom, son âge (de 2 à 5 ans, pour
 filtrer des histoires plus courtes et répétitives pour les petits, plus longues
@@ -71,7 +74,9 @@ déclarer des données.
 histoires.koplugin/        le plugin à copier sur la liseuse
   main.lua                 l'interface KOReader
   generateur.lua           le moteur, sans dépendance à KOReader
-  donnees/                 la base : personnages, lieux, objets, trames, histoires
+  donnees/                 la base : personnages, lieux, objets, trames, histoires,
+                           débuts et fins des histoires composées
+  donnees/intrigues/       les intrigues, rangées par thème
 nickelmenu/histoires       l'entrée NickelMenu
 exemples/                  modèle pour ajouter ses histoires
 tests/                     vérifications exécutables avec LuaJIT
@@ -80,7 +85,7 @@ tests/                     vérifications exécutables avec LuaJIT
 ## Tests
 
 ```
-luajit tests/test_generateur.lua           # génère et vérifie plus de 11 000 histoires
+luajit tests/test_generateur.lua           # génère et vérifie plus de 50 000 histoires
 luajit tests/test_interface.lua            # fait tourner l'interface avec de faux widgets
 luajit tests/test_generateur.lua exemple   # affiche une histoire au hasard
 ```

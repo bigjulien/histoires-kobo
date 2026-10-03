@@ -11,7 +11,15 @@ local function echec(msg)
     print("ÉCHEC : " .. msg)
 end
 
-local base, erreurs = G.chargerBase(PLUGIN)
+local function lister(dossier)
+    local res = {}
+    local h = io.popen('ls "' .. dossier .. '"/*.lua 2>/dev/null')
+    for l in h:lines() do table.insert(res, l) end
+    h:close()
+    return res
+end
+
+local base, erreurs = G.chargerBase(PLUGIN, nil, lister)
 for _, e in ipairs(erreurs) do echec("chargement : " .. e) end
 
 -- Le fichier d'exemple pour les ajouts personnels doit lui aussi être valide.
@@ -19,7 +27,7 @@ local exemple, err = G.lireFichier("exemples/mes-histoires.lua")
 if not exemple then
     echec("exemple : " .. tostring(err))
 else
-    local copie = G.chargerBase(PLUGIN)
+    local copie = G.chargerBase(PLUGIN, nil, lister)
     for _, e in ipairs(G.fusionner(copie, exemple, "exemple")) do echec(e) end
     for _, t in ipairs(exemple.trames or {}) do
         local gen = G.new(copie, { age = t.age_min })
@@ -33,7 +41,9 @@ end
 -- Règle d'écriture : pas de « de {x.nom} » ni « que {x.nom} » (élision).
 local function lint(id, texte)
     for _, motif in ipairs({ "%f[%a]de {[%^]?[%w_#]+%.nom}", "%f[%a]que {[%^]?[%w_#]+%.nom}",
-                             "%f[%a]de {enfant}", "%f[%a]que {enfant}" }) do
+                             "%f[%a]de {enfant}", "%f[%a]que {enfant}",
+                             "%f[%a]de {[%^]?[%w_#]+%.le}", "%f[%a]à {[%^]?[%w_#]+%.le}",
+                             "%f[%a]que {[%^]?[%w_#]+|[iI]l|[eE]lle}" }) do
         if texte:find(motif) then echec(id .. " : élision impossible dans « " .. texte .. " »") end
     end
 end
@@ -46,7 +56,7 @@ local function textes(entree)
     ajouter(entree.titre); ajouter(entree.paragraphes); ajouter(entree.choix)
     return res
 end
-for _, section in ipairs({ "trames", "histoires" }) do
+for _, section in ipairs({ "trames", "histoires", "ouvertures", "intrigues", "fins" }) do
     for _, e in ipairs(base[section]) do
         for _, t in ipairs(textes(e)) do lint(e.id, t) end
     end
@@ -55,13 +65,13 @@ end
 local function verifierRendu(h, quoi)
     local tout = h.titre .. "\n" .. table.concat(h.paragraphes, "\n")
     if tout:find("[{}]") then echec(quoi .. " : accolade restante\n" .. tout) end
-    if tout:find("nil") then echec(quoi .. " : « nil » dans le texte") end
+    if tout:find("%f[%a]nil%f[%A]") then echec(quoi .. " : « nil » dans le texte") end
     if tout:find("  ") then echec(quoi .. " : double espace") end
     if tout:find(" [!?:;»]") then echec(quoi .. " : espace sécable avant la ponctuation") end
     -- Contractions et élisions oubliées : « que une », « de le », « à les »...
     local bas = " " .. tout:lower():gsub("\n", " ")
-    for _, motif in ipairs({ " que [aeiouy]", " de [aeiouy]", " de le ", " de les ", " à le ", " à les ",
-                             " le [aeiouy]", " la [aeiouy]" }) do
+    -- (« de le » et « à les » restent permis : « envie de le manger ».)
+    for _, motif in ipairs({ " que [aeiouy]", " de [aeiouy]", " le [aeiouy]", " la [aeiouy]" }) do
         local debut = bas:find(motif)
         if debut then echec(quoi .. " : « " .. bas:sub(debut, debut + 20) .. " »") end
     end
@@ -96,6 +106,40 @@ for _, r in ipairs(reglages) do
             end
         end
     end
+    -- Chaque intrigue avec chaque héros et chaque lieu permis (début et fin
+    -- tirés au hasard), puis chaque début et chaque fin avec chaque héros.
+    for _, i in ipairs(base.intrigues) do
+        for _, hid in ipairs(r.prenom and heros or { nil }) do
+            for _, l in ipairs(base.lieux) do
+                if not i.lieux or (function() for _, x in ipairs(i.lieux) do if x == l.id then return true end end end)() then
+                    for graine = 1, 3 do
+                        local h, e = gen:inventer({ trame = i.id, heros = hid, lieu = l.id, graine = graine * 104729 })
+                        if not h then echec(e) else verifierRendu(h, i.id .. "/" .. tostring(hid) .. "/" .. l.id) end
+                        rendus = rendus + 1
+                    end
+                end
+            end
+        end
+    end
+    for _, section in ipairs({ "ouvertures", "fins" }) do
+        for _, m in ipairs(base[section]) do
+            for _, moment in ipairs(m.moments) do
+                local cible
+                for _, i in ipairs(base.intrigues) do if i.moment == moment then cible = i break end end
+                for _, hid in ipairs(r.prenom and heros or { nil }) do
+                    for _, l in ipairs(base.lieux) do
+                        local opts = { trame = cible.id, heros = hid, lieu = l.id, graine = 7 }
+                        opts[section == "ouvertures" and "debut" or "fin"] = m.id
+                        local h, e = gen:inventer(opts)
+                        if not h then echec(e)
+                        elseif not h.source:find(m.id, 1, true) then echec(m.id .. " non utilisé")
+                        else verifierRendu(h, m.id .. "/" .. tostring(hid) .. "/" .. l.id) end
+                        rendus = rendus + 1
+                    end
+                end
+            end
+        end
+    end
     for _, hist in ipairs(base.histoires) do
         local h, e = gen:raconter(hist)
         if not h then echec(e) else verifierRendu(h, hist.id) end
@@ -106,6 +150,13 @@ end
 local gen = G.new(base, { age = 4 })
 local a, b = gen:inventer({ graine = 42 }), gen:inventer({ graine = 42 })
 if G.versHTML(a) ~= G.versHTML(b) then echec("la graine ne rend pas l'histoire reproductible") end
+
+-- Assez de trames différentes pour chaque âge.
+for age = 2, 5 do
+    local n = G.new(base, { age = age }):nombreDeTrames()
+    if n < 500 then echec(string.format("âge %d : seulement %d trames possibles", age, n)) end
+    print(string.format("%d ans : %d trames possibles", age, n))
+end
 
 -- Majuscules accentuées.
 if G.majuscule("été") ~= "Été" then echec("majuscule accentuée") end

@@ -28,9 +28,12 @@ Generateur.CHAMPS = {
     objets = { "id", "son", "mon", "ton", "genre" },
     trames = { "id", "titre", "age_min", "age_max", "paragraphes" },
     histoires = { "id", "titre", "age_min", "age_max", "paragraphes" },
+    ouvertures = { "id", "moments", "paragraphes" },
+    intrigues = { "id", "titre", "age_min", "age_max", "moment", "paragraphes" },
+    fins = { "id", "moments", "paragraphes" },
 }
 
-local SECTIONS = { "personnages", "lieux", "objets", "trames", "histoires" }
+local SECTIONS = { "personnages", "lieux", "objets", "trames", "histoires", "ouvertures", "intrigues", "fins" }
 
 -- Espace insécable, pour que « ! » ou « ? » ne partent jamais seuls à
 -- la ligne suivante.
@@ -94,6 +97,9 @@ local function verifierEntree(section, entree)
                 section, tostring(entree.id or entree.nom or "?"), champ)
         end
     end
+    if entree.moment and entree.moment ~= "jour" and entree.moment ~= "soir" then
+        return string.format("%s « %s » : moment doit valoir \"jour\" ou \"soir\"", section, entree.id)
+    end
     if entree.genre and entree.genre ~= "m" and entree.genre ~= "f" then
         return string.format("%s « %s » : genre doit valoir \"m\" ou \"f\"", section, entree.id)
     end
@@ -127,8 +133,10 @@ function Generateur.fusionner(base, extra, origine)
     return erreurs
 end
 
---- Charge la base fournie avec le plugin, puis les fichiers .lua du
--- dossier personnel s'il existe. Renvoie la base et les erreurs.
+--- Charge la base fournie avec le plugin (donnees/ et donnees/intrigues/),
+-- puis les fichiers .lua du dossier personnel s'il existe.
+-- `lister(dossier)` renvoie les chemins des fichiers .lua d'un dossier.
+-- Renvoie la base et les erreurs.
 function Generateur.chargerBase(dossier_plugin, dossier_perso, lister)
     local base, erreurs = {}, {}
     local function ajouter(chemin)
@@ -141,10 +149,13 @@ function Generateur.chargerBase(dossier_plugin, dossier_perso, lister)
             table.insert(erreurs, e)
         end
     end
-    for _, nom in ipairs({ "personnages", "lieux", "objets", "trames", "histoires" }) do
+    for _, nom in ipairs({ "personnages", "lieux", "objets", "trames", "histoires", "ouvertures", "fins" }) do
         ajouter(dossier_plugin .. "/donnees/" .. nom .. ".lua")
     end
-    if dossier_perso and lister then
+    for _, chemin in ipairs(lister(dossier_plugin .. "/donnees/intrigues")) do
+        ajouter(chemin)
+    end
+    if dossier_perso then
         for _, chemin in ipairs(lister(dossier_perso)) do
             ajouter(chemin)
         end
@@ -267,6 +278,51 @@ function Generateur:trames()
     return filtrer(self.base.trames, self:age())
 end
 
+local function contient(liste, valeur)
+    for _, v in ipairs(liste or {}) do
+        if v == valeur then return true end
+    end
+    return false
+end
+
+--- Intrigues possibles pour l'âge réglé (et pour un lieu imposé : une
+-- intrigue peut se limiter à certains lieux avec un champ `lieux`).
+function Generateur:intrigues(lieu_id)
+    local res = {}
+    for _, i in ipairs(filtrer(self.base.intrigues, self:age())) do
+        if not lieu_id or not i.lieux or contient(i.lieux, lieu_id) then
+            table.insert(res, i)
+        end
+    end
+    return res
+end
+
+function Generateur:debutsPour(intrigue)
+    local res = {}
+    for _, o in ipairs(self.base.ouvertures or {}) do
+        if contient(o.moments, intrigue.moment) then table.insert(res, o) end
+    end
+    return res
+end
+
+function Generateur:finsPour(intrigue)
+    local res = {}
+    for _, f in ipairs(self.base.fins or {}) do
+        if contient(f.moments, intrigue.moment) then table.insert(res, f) end
+    end
+    return res
+end
+
+--- Nombre de trames différentes pour l'âge réglé : les trames complètes,
+-- plus chaque intrigue combinée à chaque début et chaque fin compatibles.
+function Generateur:nombreDeTrames()
+    local n = #self:trames()
+    for _, i in ipairs(self:intrigues()) do
+        n = n + #self:debutsPour(i) * #self:finsPour(i)
+    end
+    return n
+end
+
 function Generateur:histoires()
     local liste = filtrer(self.base.histoires, self:age())
     table.sort(liste, function(a, b) return a.titre < b.titre end)
@@ -321,9 +377,12 @@ function Generateur:inventer(opts)
     local hasard = nouveauHasard(opts.graine)
     local base = self.base
 
-    local trame = opts.trame and trouver(base.trames, opts.trame)
+    -- On tire d'abord une « unité » : une trame complète, ou une intrigue
+    -- qu'on encadrera d'un début et d'une fin.
+    local trame = opts.trame and (trouver(base.trames, opts.trame) or trouver(base.intrigues, opts.trame))
     if not trame then
         local candidates = self:trames()
+        for _, i in ipairs(self:intrigues(opts.lieu)) do table.insert(candidates, i) end
         if #candidates == 0 then return nil, "Aucune trame pour cet âge." end
         if #candidates > 1 and opts.sauf_trame then
             local autres = {}
@@ -333,6 +392,18 @@ function Generateur:inventer(opts)
             candidates = autres
         end
         trame = piocher(candidates, hasard)
+    end
+
+    local morceaux = { trame }
+    if trame.moment then
+        local debuts, fins = self:debutsPour(trame), self:finsPour(trame)
+        if #debuts == 0 or #fins == 0 then
+            return nil, string.format("Intrigue « %s » : aucun début ou aucune fin pour le moment « %s ».",
+                trame.id, tostring(trame.moment))
+        end
+        local debut = (opts.debut and trouver(debuts, opts.debut)) or piocher(debuts, hasard)
+        local fin = (opts.fin and trouver(fins, opts.fin)) or piocher(fins, hasard)
+        morceaux = { debut, trame, fin }
     end
 
     local heros
@@ -351,28 +422,50 @@ function Generateur:inventer(opts)
     end
     local compagnon = piocher(autres, hasard)
 
-    local lieu = (opts.lieu and trouver(base.lieux, opts.lieu)) or piocher(base.lieux, hasard)
+    local lieu = opts.lieu and trouver(base.lieux, opts.lieu)
+    if not lieu and trame.lieux then
+        local permis = {}
+        for _, l in ipairs(base.lieux) do
+            if contient(trame.lieux, l.id) then table.insert(permis, l) end
+        end
+        lieu = piocher(permis, hasard)
+    end
+    lieu = lieu or piocher(base.lieux, hasard)
     local objet = piocher(base.objets, hasard)
 
     local roles = self:rolesCommuns()
     roles.heros, roles.compagnon, roles.lieu, roles.objet = heros, compagnon, lieu, objet
     roles.duo = { genre = (heros.genre == "f" and compagnon.genre == "f") and "f" or "m" }
 
-    local ctx = Contexte.new(roles, trame.choix, hasard)
+    -- Les listes de choix du début et de la fin s'ajoutent à celles de
+    -- l'intrigue, qui sont prioritaires en cas de nom commun.
+    local choix = {}
+    for i = #morceaux, 1, -1 do
+        for k, v in pairs(morceaux[i].choix or {}) do choix[k] = v end
+    end
+    for k, v in pairs(trame.choix or {}) do choix[k] = v end
+
+    local ids = {}
+    for _, m in ipairs(morceaux) do table.insert(ids, m.id) end
+    local nom = table.concat(ids, "+")
+
+    local ctx = Contexte.new(roles, choix, hasard)
     local ok, histoire = pcall(function()
         local paragraphes = {}
-        for _, p in ipairs(trame.paragraphes) do
-            table.insert(paragraphes, typographier(ctx:remplir(variante(p, hasard))))
+        for _, m in ipairs(morceaux) do
+            for _, p in ipairs(m.paragraphes) do
+                table.insert(paragraphes, typographier(ctx:remplir(variante(p, hasard))))
+            end
         end
         return {
             titre = typographier(majuscule(ctx:remplir(variante(trame.titre, hasard)))),
             paragraphes = paragraphes,
-            source = "trame:" .. trame.id,
+            source = "trame:" .. nom,
             trame = trame.id,
         }
     end)
     if not ok then
-        return nil, string.format("Trame « %s » : %s", trame.id, histoire)
+        return nil, string.format("Trame « %s » : %s", nom, histoire)
     end
     return histoire
 end

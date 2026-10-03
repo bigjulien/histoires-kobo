@@ -116,6 +116,19 @@ bouton(dernier(), "Retirer").callback()
 dernier().ok_callback()
 verifier(#reglages.favoris == 0, "histoire non retirée")
 
+-- « Lire comme un livre » depuis le lecteur : changer de document, sans
+-- ouvrir un second lecteur par-dessus le premier.
+montres = {}
+local change = nil
+local dans_lecteur = Histoires:new{ path = "histoires.koplugin", ui = {
+    document = {},
+    menu = { registerToMainMenu = function() end },
+    switchDocument = function(_, chemin) change = chemin end,
+} }
+dans_lecteur:ouvrirCommeLivre({ titre = "Un essai", paragraphes = { "Bonjour." } })
+verifier(change and change:find("un%-essai%.html$"), "le lecteur ne change pas de document")
+verifier(#montres == 0, "un second lecteur a été ouvert par-dessus le premier")
+
 -- Lancement depuis NickelMenu.
 io.open("/tmp/histoires-kobo.ouvrir", "w"):close()
 montres = {}
