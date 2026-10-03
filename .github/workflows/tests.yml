@@ -1,0 +1,17 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Installer LuaJIT
+        run: sudo apt-get update && sudo apt-get install -y luajit
+      - name: Vérifier la base d'histoires
+        run: luajit tests/test_generateur.lua
+      - name: Vérifier l'interface
+        run: luajit tests/test_interface.lua

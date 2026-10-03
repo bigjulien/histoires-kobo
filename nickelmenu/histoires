@@ -1,0 +1,6 @@
+# Ajoute une entrée « Histoires » au menu principal de la Kobo (NickelMenu).
+# Copier ce fichier dans /mnt/onboard/.adds/nm/histoires
+#
+# L'entrée lance KOReader et ouvre directement l'accueil des histoires :
+# le plugin repère le fichier /tmp/histoires-kobo.ouvrir au démarrage.
+menu_item:main:Histoires:cmd_spawn:quiet:touch /tmp/histoires-kobo.ouvrir && exec /mnt/onboard/.adds/koreader/koreader.sh
