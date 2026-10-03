@@ -44,7 +44,8 @@ local stubs = {
             local i = 0 return function() i = i + 1 return t[i] end end,
         mkdir = function(p) os.execute("mkdir -p " .. p) end,
     },
-    ["apps/reader/readerui"] = { showReader = function(_, chemin) table.insert(montres, { _type = "Reader", chemin = chemin }) end },
+    ["apps/reader/readerui"] = { showReader = function(_, chemin, _, _, _, apres) table.insert(montres, { _type = "Reader", chemin = chemin, apres = apres }) end },
+    ["ui/event"] = { new = function(_, nom, arg) return { nom = nom, arg = arg } end },
 }
 local InputDialog = widget("InputDialog")
 InputDialog.getInputText = function(self) return self._saisie or "  Léa  " end
@@ -95,7 +96,7 @@ verifier(dernier() ~= v and dernier()._type == "TextViewer", "« Une autre ! » 
 bouton(dernier(), "Garder").callback()
 verifier(#reglages.favoris == 1, "histoire non gardée")
 bouton(montres[#montres - 1], "Lire comme un livre").callback()
-verifier(dernier()._type == "Reader" and io.open(dernier().chemin), "fichier HTML non créé")
+verifier(dernier()._type == "Reader" and io.open(dernier().chemin) and dernier().apres, "fichier HTML non créé ou marges non prévues")
 
 -- Héros choisi, bibliothèque, préférées.
 montres = {}
@@ -123,11 +124,19 @@ local change = nil
 local dans_lecteur = Histoires:new{ path = "histoires.koplugin", ui = {
     document = {},
     menu = { registerToMainMenu = function() end },
-    switchDocument = function(_, chemin) change = chemin end,
+    switchDocument = function(_, chemin, _, apres) change = { chemin = chemin, apres = apres } end,
 } }
 dans_lecteur:ouvrirCommeLivre({ titre = "Un essai", paragraphes = { "Bonjour." } })
-verifier(change and change:find("un%-essai%.html$"), "le lecteur ne change pas de document")
+verifier(change and change.chemin:find("un%-essai%.html$"), "le lecteur ne change pas de document")
 verifier(#montres == 0, "un second lecteur a été ouvert par-dessus le premier")
+
+-- Les marges gauche et droite du livre sont réglées à 20 après l'ouverture.
+local evenement
+local faux_lecteur = { document = { configurable = {} }, handleEvent = function(_, e) evenement = e end }
+change.apres(faux_lecteur)
+verifier(faux_lecteur.document.configurable.h_page_margins[1] == 20
+    and faux_lecteur.document.configurable.h_page_margins[2] == 20, "marges du livre non enregistrées")
+verifier(evenement and evenement.nom == "SetPageHorizMargins" and evenement.arg[1] == 20, "marges du livre non appliquées")
 
 -- Lancement depuis NickelMenu.
 io.open("/tmp/histoires-kobo.ouvrir", "w"):close()
